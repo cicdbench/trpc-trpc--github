@@ -1,0 +1,99 @@
+{
+  "provider": "github",
+  "round": "gate-r1",
+  "manifests": {
+    ".github/workflows/main.yml": {
+      "removedTriggers": [
+        "merge_group",
+        "push"
+      ],
+      "removedEnv": [
+        "build.TURBO_TOKEN",
+        "build.TURBO_TEAM",
+        "typecheck.TURBO_TOKEN",
+        "typecheck.TURBO_TEAM",
+        "verify-packed.TURBO_TOKEN",
+        "verify-packed.TURBO_TEAM",
+        "typecheck-www.TURBO_TOKEN",
+        "typecheck-www.TURBO_TEAM",
+        "test.TURBO_TOKEN",
+        "test.TURBO_TEAM",
+        "e2e.TURBO_TEAM",
+        "e2e.TURBO_TOKEN",
+        "e2e-deno.TURBO_TOKEN",
+        "e2e-deno.TURBO_TEAM",
+        "e2e-bun.TURBO_TOKEN",
+        "e2e-bun.TURBO_TEAM",
+        "e2e-legacy-node.TURBO_TOKEN",
+        "e2e-legacy-node.TURBO_TEAM"
+      ],
+      "removedJobs": [
+        {
+          "id": "release-tmp",
+          "reason": "publish"
+        }
+      ],
+      "runsOnChanges": [
+        {
+          "job": "build",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "typecheck",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "verify-packed",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "typecheck-www",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "test",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "e2e",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "e2e-deno",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "e2e-bun",
+          "from": "${{ matrix.os }}"
+        },
+        {
+          "job": "e2e-legacy-node",
+          "from": "ubuntu-latest"
+        },
+        {
+          "job": "monotest-build",
+          "from": "ubuntu-latest"
+        }
+      ],
+      "localReusable": [],
+      "removedSteps": [
+        {
+          "job": "test",
+          "step": "codecov/codecov-action@v7",
+          "reason": "optional-secret"
+        }
+      ]
+    }
+  },
+  "deleted": [
+    ".github/workflows/codeql-analysis.yml",
+    ".github/workflows/dependabot-approve.yml",
+    ".github/workflows/labeler.yml",
+    ".github/workflows/lint.yml",
+    ".github/workflows/lock-issues.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/semantic-pr.yml",
+    ".github/workflows/sponsors.yml",
+    ".github/workflows/subtree.yml"
+  ]
+}
