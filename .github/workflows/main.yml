@@ -1,0 +1,249 @@
+name: main
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}${{ (github.ref == 'refs/heads/main' || startsWith(github.event.head_commit.message, 'chore: release v')) && format('-{0}', github.sha) || '' }}-cicdbench-github-r174"
+  cancel-in-progress: true
+jobs:
+  build:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    timeout-minutes: 10
+    env: {}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+  typecheck:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    timeout-minutes: 10
+    env: {}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm typecheck-packages
+  verify-packed:
+    name: Verify packed packages as a consumer
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    timeout-minutes: 15
+    env: {}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+      - name: Generate and validate agent skills
+        run: pnpm validate-skills
+      - run: pnpm verify-packed
+  typecheck-www:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    timeout-minutes: 15
+    env: {}
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm typecheck-www
+      - run: pnpm --filter www check-twoslash
+  test:
+    name: unit and integration tests
+    timeout-minutes: 10
+    env: {}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: MUTE_REACT_ACT_WARNINGS=1 pnpm test --coverage
+      - name: Verify committed openapi test fixtures
+        run: |
+          if [[ -n "$(git status --porcelain -- packages/openapi/test/routers/)" ]]; then
+            echo "Generated files in packages/openapi/test/routers/ are out of date."
+            echo "Run 'pnpm -C packages/openapi codegen' locally and commit the resulting changes."
+            git status --short -- packages/openapi/test/routers/
+            echo ""
+            echo "Diff for generated fixtures:"
+            git --no-pager diff -- packages/openapi/test/routers/
+            exit 1
+          fi
+      - run: pnpm turbo --filter 'www^...' build
+      - run: pnpm --filter www test
+  e2e:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    name: E2E-tests
+    needs:
+      - build
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_DATABASE: trpcdb
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+    env:
+      NEXTAUTH_SECRET: supersecret
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      matrix:
+        dir:
+          - .experimental/next-app-dir
+          - .test/internal-types-export
+          - .test/ssg
+          - cloudflare-workers
+          - express-minimal
+          - express-server
+          - fastify-server
+          - minimal-react
+          - minimal-per-procedure-errors
+          - next-formdata
+          - next-minimal-starter
+          - next-prisma-starter
+          - next-prisma-todomvc
+          - next-prisma-websockets-starter
+          - openapi-codegen
+          - soa
+          - standalone-server
+          - vercel-edge-runtime
+          - nuxt
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+      - run: cp ./examples/${{ matrix.dir }}/.env.example ./examples/${{ matrix.dir }}/.env || true
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-dev
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} build
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} typecheck
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-start
+  e2e-deno:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    name: E2E-tests (Deno)
+    needs:
+      - build
+    env:
+      NEXTAUTH_SECRET: supersecret
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      matrix:
+        dir:
+          - deno-deploy
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+      - uses: denoland/setup-deno@v2.0.5
+        with:
+          deno-version: 2.x
+      - run: deno --version
+      - run: |
+          cd ./examples/${{ matrix.dir }}
+          pnpm dlx start-server-and-test "deno run --allow-net=:8000 --allow-env ./src/index.ts" http://127.0.0.1:8000 "deno run --allow-net --allow-env ./src/client.ts"
+  e2e-bun:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    name: E2E-tests (Bun)
+    needs:
+      - build
+    env:
+      NEXTAUTH_SECRET: supersecret
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      matrix:
+        dir:
+          - bun
+        os:
+          - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun --version
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-dev
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} build
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} typecheck
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-start
+  e2e-legacy-node:
+    if: "github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore: release v')"
+    needs:
+      - build
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_DATABASE: trpcdb
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+    env:
+      NEXTAUTH_SECRET: supersecret
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      matrix:
+        dir:
+          - next-prisma-starter
+          - next-prisma-websockets-starter
+          - next-prisma-todomvc
+        node-start:
+          - 20.x
+          - 22.x
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm build
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-start }}
+          cache: pnpm
+      - run: node -v
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-dev
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} build
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} typecheck
+      - run: pnpm turbo --filter ./examples/${{ matrix.dir }} test-start
+  monotest-build:
+    name: Test a monorepo using built declaration files
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/setup
+      - run: pnpm monotest-build
+    timeout-minutes: 30
